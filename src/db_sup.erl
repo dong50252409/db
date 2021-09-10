@@ -26,10 +26,17 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
-    SupFlags = #{strategy => one_for_all,
-                 intensity => 0,
-                 period => 1},
-    ChildSpecs = [],
+    SupFlags = #{
+        strategy => one_for_one,
+        intensity => 10,
+        period => 5
+    },
+    ChildSpecs = [
+        begin
+            PoolArgs1 = [{name, {local, PoolName}}, {worker_module, mysql} | PoolArgs],
+            poolboy:child_spec(PoolName, PoolArgs1, MySQLArgs)
+        end
+        || {PoolName, {PoolArgs, MySQLArgs}} <- application:get_env(db, mysql_pool, [])],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions

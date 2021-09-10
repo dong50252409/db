@@ -10,24 +10,24 @@
 
 -include("db_mysql.hrl").
 
--define(CHECK_OPTIONS_LIST, [struct_type, flush_interval]).
+-define(CHECK_OPTIONS_LIST, [struct_type]).
 
 %% API
 -export([reg/3, select/4, flush/2]).
 
--spec reg(DB :: db_name(), ModName :: module(), Options :: options()) -> ok|{error, term()}.
+-spec reg(DB :: db_name(), ModName :: module(), Options :: [option()]) -> ok|{error, term()}.
 reg(DB, ModName, Options) ->
     case check_options(Options, ?CHECK_OPTIONS_LIST) of
         true ->
             {StructType, Cache} = get_struct_type_and_cache(Options),
-            try_start_flush_timer(ModName, Options),
-            erlang:put({'$db_table_info', ModName}, #{db => DB, struct_type => StructType, cache => Cache}),
+            TableInfo = #{db => DB, struct_type => StructType, cache => Cache},
+            erlang:put({'$db_table_info', ModName}, TableInfo),
             ok;
         Err ->
             Err
     end.
 
--spec select(DB :: db_name(), ModName :: module(), Conditions :: [condition()], Options :: options()) ->
+-spec select(DB :: db_name(), ModName :: module(), Conditions :: [condition()], Options :: [option()]) ->
     Result :: {ok, struct()}|{error, term()}|query_error().
 select(DB, ModName, Conditions, Options) ->
     case check_options(Options, ?CHECK_OPTIONS_LIST) of
@@ -37,8 +37,8 @@ select(DB, ModName, Conditions, Options) ->
                 {ok, _Columns, Rows} ->
                     AsStruct = proplists:get_value(struct_type, Options),
                     Struct = as_struct(ModName, Rows, AsStruct),
-                    try_start_flush_timer(ModName, Options),
-                    erlang:put({'$db_table_info', ModName}, #{db => DB, struct_type => AsStruct, cache => Struct}),
+                    TableInfo = #{db => DB, struct_type => AsStruct, cache => Struct},
+                    erlang:put({'$db_table_info', ModName}, TableInfo),
                     {ok, Struct};
                 Err ->
                     Err
@@ -70,15 +70,6 @@ check_options(Options, [struct_type | T]) ->
         false ->
             {error, undefined_struct_type}
     end;
-check_options(Options, [flush_interval | T]) ->
-    case proplists:get_value(flush_interval, Options) of
-        undefined ->
-            check_options(Options, T);
-        {Timeout, _Args} when is_integer(Timeout) ->
-            check_options(Options, T);
-        _ ->
-            {error, invalid_flush_interval}
-    end;
 check_options(_Options, []) ->
     true.
 
@@ -90,14 +81,6 @@ get_struct_type_and_cache(Options) ->
             {StructType, []};
         StructType ->
             {StructType, undefined}
-    end.
-
-try_start_flush_timer(ModName, Options) ->
-    case proplists:get_value(flush_interval, Options) of
-        {Timeout, Args} ->
-            erlang:start_timer(Timeout, self(), {db_flush_timeout, ModName, Args});
-        undefined ->
-            ok
     end.
 
 as_struct(_ModName, [], map) ->

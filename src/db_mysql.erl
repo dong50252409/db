@@ -33,18 +33,18 @@
 %% API functions
 %%--------------------------------------------------------------------
 %% @doc 插入一行数据
--spec insert_row(DB :: db_name(), TableName :: table_name(), Fields :: fields(), Values :: values()) ->
+-spec insert_row(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Values :: [value()]) ->
     Result :: {ok, affected_rows()}|mysql:query_result().
 insert_row(DB, TableName, Fields, Values) when is_atom(TableName), is_list(Fields), is_list(Values) ->
     SQL = io_lib:format("INSERT INTO `~ts` (~ts) VALUES (~ts);", [TableName, join_fields(Fields), join_values(Values)]),
     query(DB, SQL, Values).
 
 %% @doc 插入多行数据
--spec insert_rows(DB :: db_name(), TableName :: table_name(), Fields :: fields(), ValuesList :: [values()]) ->
+-spec insert_rows(DB :: db_name(), TableName :: table_name(), Fields :: [field()], ValuesList :: [[value()]]) ->
     Result :: {ok, affected_rows()}|query_error().
 insert_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list(Fields), is_list(ValuesList) ->
     SQL = io_lib:format("INSERT INTO `~ts` (~ts) VALUES (~ts);", [TableName, join_fields(Fields), join_values(hd(ValuesList))]),
-    ?SHOW_SQL([SQL, ValuesList]),
+    ?SQL([SQL, ValuesList]),
     case transaction(DB, fun insert_transaction/3, [SQL, ValuesList]) of
         {atomic, Result} ->
             Result;
@@ -53,11 +53,11 @@ insert_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list(
     end.
 
 %% @doc 替换多行数据
--spec replace_rows(DB :: db_name(), TableName :: table_name(), Fields :: fields(), ValuesList :: [values()]) ->
+-spec replace_rows(DB :: db_name(), TableName :: table_name(), Fields :: [field()], ValuesList :: [[value()]]) ->
     Result :: {ok, affected_rows()}|query_error().
 replace_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list(Fields), is_list(ValuesList) ->
     SQL = io_lib:format("REPLACE INTO `~ts` (~ts) VALUES (~ts);", [TableName, join_fields(Fields), join_values(hd(ValuesList))]),
-    ?SHOW_SQL([SQL, ValuesList]),
+    ?SQL([SQL, ValuesList]),
     case transaction(DB, fun insert_transaction/3, [SQL, ValuesList]) of
         {atomic, Result} ->
             Result;
@@ -81,12 +81,12 @@ delete_rows(DB, TableName, Conditions) when is_atom(TableName), is_list(Conditio
     query(DB, SQL, ConvertValues).
 
 %% @doc 根据主键列表和值列表，删除表数据
--spec delete_rows(DB :: db_name(), TableName :: table_name(), KeyFields :: fields(), KeyValuesList :: [values()]) ->
+-spec delete_rows(DB :: db_name(), TableName :: table_name(), KeyFields :: [field()], KeyValuesList :: [[value()]]) ->
     Result :: {ok, affected_rows()}|mysql:query_result().
 delete_rows(DB, TableName, KeyFields, KeyValuesList) when is_atom(TableName), is_list(KeyFields), is_list(KeyValuesList) ->
     Conditions = lists:join(" AND ", [[atom_to_list(KeyField), "=?"] || KeyField <- KeyFields]),
     SQL = io_lib:format("DELETE FROM `~ts` WHERE ~ts;", [TableName, Conditions]),
-    ?SHOW_SQL([SQL, KeyValuesList]),
+    ?SQL([SQL, KeyValuesList]),
     case transaction(DB, fun delete_rows_transaction/3, [SQL, KeyValuesList]) of
         {atomic, Result} ->
             Result;
@@ -95,14 +95,14 @@ delete_rows(DB, TableName, KeyFields, KeyValuesList) when is_atom(TableName), is
     end.
 
 %% @doc 更新表所有数据
--spec update_all(DB :: db_name(), TableName :: table_name(), Fields :: fields(), Values :: values()) ->
+-spec update_all(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Values :: [value()]) ->
     Result :: ok|{ok, affected_rows()}|mysql:query_result().
 update_all(DB, TableName, Fields, Values) when is_atom(TableName), is_list(Fields), is_list(Values) ->
     SQL = io_lib:format("UPDATE `~ts` SET ~ts;", [TableName, join_update_fields(Fields)]),
     query(DB, SQL, Values).
 
 %% @doc 根据条件，更新表数据
--spec update_rows(DB :: db_name(), TableName :: table_name(), Fields :: fields(), Values :: values(),
+-spec update_rows(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Values :: [value()],
     Conditions :: [condition()]) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
 update_rows(DB, TableName, Fields, Values, Conditions)
     when is_atom(TableName), is_list(Fields), is_list(Values), is_list(Conditions) ->
@@ -111,8 +111,8 @@ update_rows(DB, TableName, Fields, Values, Conditions)
     query(DB, SQL, Values ++ ConvertValues).
 
 %% @doc 更新多行表数据，每个更新的字段数必须一致
--spec update_rows(DB :: db_name(), TableName :: table_name(), UpdateFields :: fields(), UpdateValuesList :: [values()],
-    KeyFields :: fields(), KeyValuesList :: [values()]) -> Result :: {ok, affected_rows()}|mysql:query_result().
+-spec update_rows(DB :: db_name(), TableName :: table_name(), UpdateFields :: [field()], UpdateValuesList :: [[value()]],
+    KeyFields :: [field()], KeyValuesList :: [[value()]]) -> Result :: {ok, affected_rows()}|mysql:query_result().
 update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFields, KeyValuesList)
     when is_atom(TableName), is_list(UpdateFields), is_list(UpdateValuesList), is_list(KeyFields), is_list(KeyValuesList) ->
     Conditions = [[atom_to_list(KeyField), "=?"] || KeyField <- KeyFields],
@@ -125,7 +125,7 @@ update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFields, KeyValuesL
     end.
 
 %% @doc 查询表数据，Fields为空则查询所有字段
--spec select(DB :: db_name(), TableName :: table_name(), Fields :: fields()) -> Result :: mysql:query_result().
+-spec select(DB :: db_name(), TableName :: table_name(), Fields :: [field()]) -> Result :: mysql:query_result().
 select(DB, TableName, Fields) when is_atom(TableName), is_list(Fields) ->
     case Fields of
         [] ->
@@ -136,7 +136,7 @@ select(DB, TableName, Fields) when is_atom(TableName), is_list(Fields) ->
     query(DB, SQL).
 
 %% @doc 根据指定条件，查询表数据，Fields为空则查询所有字段
--spec select(DB :: db_name(), TableName :: table_name(), Fields :: fields(), Conditions :: [condition()]) ->
+-spec select(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Conditions :: [condition()]) ->
     Result :: mysql:query_result().
 select(DB, TableName, Fields, Conditions) when is_atom(TableName), is_list(Fields), is_list(Conditions) ->
     {ConvertCondition, ConvertValues} = condition_convert(Conditions),
@@ -168,15 +168,15 @@ query(DB, SQL) ->
     query(DB, SQL, [], default_timeout).
 
 %% @doc 执行一条SQL语句
--spec query(DB :: db_name(), Query :: sql(), Values :: values()) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
+-spec query(DB :: db_name(), Query :: sql(), Values :: [value()]) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
 query(DB, SQL, Values) ->
     query(DB, SQL, Values, default_timeout).
 
 %% @doc 执行一条SQL语句，指定超时时长
--spec query(DB :: db_name(), SQL :: sql(), Values :: values(), Timeout :: infinity | default_timeout | timeout()) ->
+-spec query(DB :: db_name(), SQL :: sql(), Values :: [value()], Timeout :: infinity | default_timeout | timeout()) ->
     Result :: ok|{ok, affected_rows()}|mysql:query_result().
 query(DB, SQL, Values, Timeout) ->
-    ?SHOW_SQL([SQL, Values]),
+    ?SQL([SQL, Values]),
     Fun =
         fun(MySQLConn) ->
             case mysql:query(MySQLConn, SQL, Values, Timeout) of
@@ -224,7 +224,7 @@ transaction(DB, TransactionFun, Args, Retries) when is_function(TransactionFun, 
 %% Internal functions
 %%--------------------------------------------------------------------
 %% @doc 插入多行数据事务函数
--spec insert_transaction(mysql_conn(), sql(), [values()]) -> {atomic, {ok, affected_rows()}} |{aborted, term()}.
+-spec insert_transaction(mysql_conn(), sql(), [[value()]]) -> {atomic, {ok, affected_rows()}} |{aborted, term()}.
 insert_transaction(MySQLConn, SQL, ValuesList) ->
     case mysql:prepare(MySQLConn, SQL) of
         {ok, StatementRef} ->
@@ -241,7 +241,7 @@ insert_transaction(MySQLConn, SQL, ValuesList) ->
     end.
 
 %% @doc 根据主键删除多个表数据事物函数
--spec delete_rows_transaction(mysql_conn(), sql(), [values()]) -> {atomic, {ok, affected_rows()}} |{aborted, term()}.
+-spec delete_rows_transaction(mysql_conn(), sql(), [[value()]]) -> {atomic, {ok, affected_rows()}} |{aborted, term()}.
 delete_rows_transaction(MySQLConn, SQL, Params) ->
     case mysql:prepare(MySQLConn, SQL) of
         {ok, StatementRef} ->
@@ -258,9 +258,9 @@ delete_rows_transaction(MySQLConn, SQL, Params) ->
     end.
 
 %% @doc  更新多个相同的Record结构事物函数
--spec update_rows_transaction(mysql_conn(), sql(), [values()], [values()]) -> {atomic, {ok, affected_rows()}} |{aborted, term()}.
+-spec update_rows_transaction(mysql_conn(), sql(), [[value()]], [[value()]]) -> {atomic, {ok, affected_rows()}} |{aborted, term()}.
 update_rows_transaction(MySQLConn, SQL, ValuesList, KeyValuesList) ->
-    ?SHOW_SQL([SQL, lists:zip(ValuesList, KeyValuesList)]),
+    ?SQL([SQL, lists:zip(ValuesList, KeyValuesList)]),
     case mysql:prepare(MySQLConn, SQL) of
         {ok, StatementRef} ->
             InternalFun =
@@ -294,7 +294,7 @@ join_fields([]) ->
     [].
 
 %% @doc 平整化占位符
--spec join_values(values()) -> list().
+-spec join_values([value()]) -> list().
 join_values([_Value]) ->
     ["?"];
 join_values([_Value | T]) ->
@@ -303,7 +303,7 @@ join_values([]) ->
     [].
 
 %% @doc 条件转换
--spec condition_convert([condition(), ...]) -> {list(), values()}.
+-spec condition_convert([condition(), ...]) -> {list(), [value()]}.
 condition_convert([{Field, Operator, Value} | T])
     when Operator =:= '='; Operator =:= '!='; Operator =:= '>'; Operator =:= '<'; Operator =:= '>='; Operator =:= '<='; Operator =:= 'LIKE' ->
     {Conditions, ConditionValue} = condition_convert(T),
