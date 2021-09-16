@@ -2,20 +2,30 @@
 %%% @author gz1417
 %%% @copyright (C) 2021, <COMPANY>
 %%% @doc
-%%% 数据库代理
+%%% 进程State持久化代理
+%%% 调用reg/3或通过select/4将通过进程字典创建一个键为{'$db_table_info', ModName}的数据，值为需要同步的数据结构
 %%% @end
 %%% Created : 08. 9月 2021 14:29
 %%%-------------------------------------------------------------------
--module(db_agent).
-
--include("db_mysql.hrl").
+-module(db_agent_process).
 
 -define(CHECK_OPTIONS_LIST, [struct_type]).
 
 %% API
 -export([reg/3, select/4, flush/2]).
 
--spec reg(DB :: db_name(), ModName :: module(), Options :: [option()]) -> ok|{error, term()}.
+-export_type([option/0, struct_type/0, struct/0]).
+
+-type option() :: {struct_type, struct_type()}.
+-type struct_type() :: map | maps | record | record_list.
+-type struct() :: map() | tuple() | [tuple()] | undefined.
+
+%%------------------------------------------------------------------------------
+%% @doc
+%% 注册要管理的表模块
+%% @end
+%%------------------------------------------------------------------------------
+-spec reg(DB :: db_mysql:db_name(), ModName :: module(), Options :: [option()]) -> ok|{error, term()}.
 reg(DB, ModName, Options) ->
     case check_options(Options, ?CHECK_OPTIONS_LIST) of
         true ->
@@ -27,8 +37,13 @@ reg(DB, ModName, Options) ->
             Err
     end.
 
--spec select(DB :: db_name(), ModName :: module(), Conditions :: [condition()], Options :: [option()]) ->
-    Result :: {ok, struct()}|{error, term()}|query_error().
+%%------------------------------------------------------------------------------
+%% @doc
+%% 通过表模块以及条件查询数据，并返回指定结构，并注册管理此表模块
+%% @end
+%%------------------------------------------------------------------------------
+-spec select(DB :: db_mysql:db_name(), ModName :: module(), Conditions :: [db_mysql:condition()], Options :: [option()]) ->
+    Result :: {ok, struct()}|{error, term()}|db_mysql:query_error().
 select(DB, ModName, Conditions, Options) ->
     case check_options(Options, ?CHECK_OPTIONS_LIST) of
         true ->
@@ -47,6 +62,11 @@ select(DB, ModName, Conditions, Options) ->
             Err
     end.
 
+%%------------------------------------------------------------------------------
+%% @doc
+%% 主动对比表模块数据，并更新保存到数据库
+%% @end
+%%------------------------------------------------------------------------------
 -spec flush(ModName :: module(), NewStruct :: struct()) -> ok.
 flush(ModName, NewStruct) ->
     case get({'$db_table_info', ModName}) of

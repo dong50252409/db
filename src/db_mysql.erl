@@ -9,11 +9,6 @@
 -module(db_mysql).
 
 %%--------------------------------------------------------------------
-%% include
-%%--------------------------------------------------------------------
--include("db_mysql.hrl").
-
-%%--------------------------------------------------------------------
 %% API
 %%--------------------------------------------------------------------
 
@@ -29,6 +24,27 @@
     prepare/2,
     transaction/2, transaction/3, transaction/4
 ]).
+
+-export_type([db_name/0, mysql_conn/0, table_name/0, field/0, value/0, sql/0, operator/0, condition/0, affected_rows/0, query_error/0]).
+
+-type db_name() :: poolboy:pool().
+-type mysql_conn() :: mysql:connection().
+-type table_name() :: atom().
+-type field() :: atom().
+-type value() :: term().
+-type sql() :: iodata().
+-type operator() :: '='|'!='|'>'|'<'|'>='|'<='|'LIKE'|'BETWEEN'|'AND'|'OR'|'IN'|'NOT IN'.
+-type condition() :: {field(), operator(), value()}|{field(), operator(), value(), operator(), value()}|operator().
+-type affected_rows() :: non_neg_integer().
+-type query_error() :: {error, mysql:server_reason()}.
+
+
+-ifdef(SHOW_SQL).
+-define(SQL(Params), io:format("SQL:~ts~nParams:~tp~n", Params)).
+-else.
+-define(SQL(_Params), ok).
+-endif.
+
 %%%-------------------------------------------------------------------
 %% API functions
 %%--------------------------------------------------------------------
