@@ -40,9 +40,9 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
   ]}.
   ```
 
-4. 使用 **db_agent_process:ref/3** 注册要管理的数据库表模块，或者通过 **db_agent_process:select/4** 查找要管理的数据库表模块数据
-5. 使用 **db_agent_process:flush/2** 更新保存数据到数据库表中
-6. 使用 **db_agent_process:ref/3** 例子
+4. 使用**db_agent_process:ref/3**注册要管理的数据库表模块，或者通过**db_agent_process:select/4**查找要管理的数据库表模块数据
+5. 使用**db_agent_process:flush/2**更新保存数据到数据库表中
+6. 使用**db_agent_process:ref/3**例子
 
   ```
   State = #{},
@@ -59,7 +59,7 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
   end.
   ```
 
-6. 使用 **db_agent_process:select/4** 例子
+6. 使用**db_agent_process:select/4**例子
 
   ```  
   State = #{},
@@ -90,7 +90,7 @@ db_mysql类型
 
 * `-type table_name() :: atom().`
 
-  数据库表名，可通过 **ModName:get_table_name/0** 获取
+  数据库表名，可通过**ModName:get_table_name/0**获取
 
 
 * `-type field() :: atom().`
@@ -123,7 +123,7 @@ db_mysql类型
 
 * `-type affected_rows() :: non_neg_integer().`
 
-  执行SQL后的受影响行数，仅 **update_all/4, update_rows/5, update_rows/6, delete_rows/3, delete_rows/4** 操作有返回
+  执行SQL后的受影响行数，仅**update_all/4, update_rows/5, update_rows/6, delete_rows/3, delete_rows/4**操作有返回
 
 
 * `-type query_error() :: {error, mysql:server_reason()}.`
@@ -149,13 +149,13 @@ db_agent_process类型
 
 * `-type struct() :: map() | tuple() | [tuple()] | undefined.`
 
-  指定`{struct_type, struct_type()}`选项后可返回的数据保存形式，对于map、tuple两种保存形式，如果数据为空返回undefined。实际开发中，如果想要删除通过map、tuple两种保存形式的数据，仅需将数据赋值为undefined，当调用 **db_agent_process:flush/2** 函数时将自动删除对应数据
+  指定`{struct_type, struct_type()}`选项后可返回的数据保存形式，对于map、tuple两种保存形式，如果数据为空返回undefined。实际开发中，如果想要删除通过map、tuple两种保存形式的数据，仅需将数据赋值为undefined，当调用**db_agent_process:flush/2**函数时将自动删除对应数据
 
 db_agent_ets类型
 ----
 
 * `-type option() :: {flush_interval, timeout()}|{db, db_mysql:db_name()}|{callback, module()|pid()}|heir.` 
-  * `{flush_interval, timeout()}` 指定自动保存数据库间隔，不指定则需手动调用 **flush/1** 触发存库，或调用 **pull/1** 获取脏数据键值列表，进行自主处理 
-  * `{db, db_mysql:db_name()}` 指定数据库连接池，配合 **flush_interval** 选项可自动间隔保存数据库 
-  * `{callback, module()|pid()}` 指定回调模块，配合 **flush_interval** 选项可自动间隔向回调进程发送在数据键值列表，若`db`和`callback`选项都未指定，则默认调用**reg/3**函数的进程为回调进程 `{ets_dirty_info, InsertList, UpdateList, DeleteList}`
-  * `heir` 指定 **db_agent_ets** 作为ets的后继者，当创建ets的进程终止时，则由 **db_agent_ets** 负责最后的数据存储工作
+  * `{flush_interval, timeout()}` 指定自动保存数据库间隔，不指定则需手动调用**db_agent_ets:flush/1**触发存库，或调用**db_agent_ets:pull/1**获取脏数据键值列表，进行自主处理 
+  * `{db, db_mysql:db_name()}` 指定数据库连接池，配合**db_agent_ets:flush_interval**选项可自动间隔保存数据库 
+  * `{callback, module()|pid()}` 指定回调模块，配合**db_agent_ets:flush_interval**选项可自动间隔向回调进程发送在数据键值列表，若`db`和`callback`选项都未指定，则默认调用**db_agent_ets:reg/3**函数的进程为回调进程 `{ets_dirty_info, InsertList, UpdateList, DeleteList}`
+  * `heir` 指定**db_agent_ets**作为ets的后继者，当创建ets的进程终止时，则由**db_agent_ets**负责最后的数据存储工作
