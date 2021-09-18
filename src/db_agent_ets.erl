@@ -542,7 +542,7 @@ insert_record_list(DB, ModName, RecordList) ->
 update_record_list(DB, ModName, RecordList) ->
     TableName = ModName:get_table_name(),
     UpdateFields = ModName:get_table_field_list(),
-    KeyFieldList = ModName:get_table_key_filed_list(),
+    KeyFieldList = ModName:get_table_key_field_list(),
     {KeyValuesList, UpdateValuesList} = get_key_values_and_values_list(ModName, RecordList),
     {ok, _} = db_mysql:update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFieldList, KeyValuesList).
 
@@ -556,7 +556,7 @@ get_key_values_and_values_list(_ModName, []) ->
 
 delete_record_list(DB, ModName, KeyValuesList) ->
     TableName = ModName:get_table_name(),
-    KeyFieldList = ModName:get_table_key_filed_list(),
+    KeyFieldList = ModName:get_table_key_field_list(),
     {ok, _} = db_mysql:delete_rows(DB, TableName, KeyFieldList, KeyValuesList).
 
 do_pull(Tab, State) ->
