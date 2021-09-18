@@ -1,15 +1,17 @@
-{application, db,
- [{description, "An OTP application"},
-  {vsn, "0.1.0"},
-  {registered, []},
-  {mod, {db_app, []}},
-  {applications,
-   [kernel,
-    stdlib
-   ]},
-  {env,[]},
-  {modules, []},
+{application, db, [
+    {description, "半自动数据库持久化应用"},
+    {vsn, "0.1.0"},
+    {registered, []},
+    {mod, {db_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        poolboy,
+        mysql
+    ]},
+    {env, []},
+    {modules, []},
 
-  {licenses, ["Apache 2.0"]},
-  {links, []}
- ]}.
+    {licenses, ["Apache 2.0"]},
+    {links, []}
+]}.
