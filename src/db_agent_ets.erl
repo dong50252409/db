@@ -535,13 +535,13 @@ do_collect_flush_list(_Tab, none, KeyMaps, InsertList, UpdateList, DeleteList) -
 
 insert_record_list(DB, ModName, RecordList) ->
     TableName = ModName:get_table_name(),
-    FieldList = ModName:get_table_filed_list(),
+    FieldList = ModName:get_table_field_list(),
     ValuesList = [ModName:get_table_values(Record) || Record <- RecordList],
     {ok, _} = db_mysql:insert_rows(DB, TableName, FieldList, ValuesList).
 
 update_record_list(DB, ModName, RecordList) ->
     TableName = ModName:get_table_name(),
-    UpdateFields = ModName:get_table_filed_list(),
+    UpdateFields = ModName:get_table_field_list(),
     KeyFieldList = ModName:get_table_key_filed_list(),
     {KeyValuesList, UpdateValuesList} = get_key_values_and_values_list(ModName, RecordList),
     {ok, _} = db_mysql:update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFieldList, KeyValuesList).
