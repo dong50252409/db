@@ -144,7 +144,7 @@ db_agent_process类型
   * `map`适用于单行数据保存，将数据库表数据以map形式保存，key为表字段，value为表字段值
   * `maps`适用于多行数据保存，将数据库表数据以map形式保存，key为表主键列字段的值，如果存在多个主键列，则将其组织成tuple形式，value为表一行数据所组成的map
   * `record`适用于单行数据保存，将数据库表数据以record形式保存
-  * `record_list`适用于多行数据保存，将数据库表数据以列表形式保存，每个元素未record
+  * `record_list`适用于多行数据保存，将数据库表数据以列表形式保存，每个元素为record
 
 
 * `-type struct() :: map() | tuple() | [tuple()] | undefined.`

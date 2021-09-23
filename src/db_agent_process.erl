@@ -123,27 +123,29 @@ as_maps(ModName, [Row | T], AccMaps) ->
 as_maps(_ModName, [], AccMaps) ->
     AccMaps.
 
-compare(map, DB, ModName, NewStruct, Struct) ->
-    compare_map(DB, ModName, NewStruct, Struct);
-compare(maps, DB, ModName, NewStruct, Struct) ->
-    compare_maps(DB, ModName, NewStruct, Struct);
-compare(record, DB, ModName, NewStruct, Struct) ->
-    compare_record(DB, ModName, NewStruct, Struct);
-compare(record_list, DB, ModName, NewStruct, Struct) ->
-    compare_record_list(DB, ModName, NewStruct, Struct).
+compare(map, DB, ModName, New, Old) ->
+    compare_map(DB, ModName, New, Old);
+compare(maps, DB, ModName, New, Old) ->
+    compare_maps(DB, ModName, New, Old);
+compare(record, DB, ModName, New, Old) ->
+    compare_record(DB, ModName, New, Old);
+compare(record_list, DB, ModName, New, Old) ->
+    compare_record_list(DB, ModName, New, Old).
 
-compare_map(_DB, _ModName, Map, Map) ->
-    nothing;
-compare_map(DB, ModName, undefined, OldMap) ->
-    delete_map(DB, ModName, OldMap);
-compare_map(DB, ModName, NewMap, undefined) ->
+compare_map(DB, ModName, NewMap, undefined) when is_map(NewMap) ->
     insert_map(DB, ModName, NewMap);
-compare_map(DB, ModName, NewMap, _OldMap) ->
-    update_map(DB, ModName, NewMap).
+compare_map(DB, ModName, undefined, OldMap) when is_map(OldMap) ->
+    delete_map(DB, ModName, OldMap);
+compare_map(DB, ModName, NewMap, OldMap) when is_map(NewMap), is_map(OldMap), NewMap =/= OldMap ->
+    update_map(DB, ModName, NewMap);
+compare_map(_DB, _ModName, _, _) ->
+    nothing.
 
-compare_maps(DB, ModName, NewMaps, undefined) ->
+compare_maps(DB, ModName, NewMaps, undefined) when is_map(NewMaps) ->
     insert_maps(DB, ModName, maps:values(NewMaps));
-compare_maps(DB, ModName, NewMaps, OldMaps) ->
+compare_maps(DB, ModName, undefined, OldMaps) when is_map(OldMaps) ->
+    delete_maps(DB, ModName, maps:values(OldMaps));
+compare_maps(DB, ModName, NewMaps, OldMaps) when is_map(NewMaps), is_map(OldMaps) ->
     Iter = maps:iterator(NewMaps),
     {InsertList, UpdateList, DeleteList} = compare_maps_1(maps:next(Iter), OldMaps, [], []),
     insert_maps(DB, ModName, InsertList),
@@ -162,16 +164,16 @@ compare_maps_1({Key, Map, NextIter}, OldMaps, InsertList, UpdateList) ->
 compare_maps_1(none, OldMaps, InsertList, UpdateList) ->
     {InsertList, UpdateList, maps:values(OldMaps)}.
 
-compare_record(_DB, _ModName, Record, Record) ->
-    nothing;
-compare_record(DB, ModName, undefined, OldRecord) ->
-    delete_record(DB, ModName, OldRecord);
-compare_record(DB, ModName, NewRecord, undefined) ->
+compare_record(DB, ModName, NewRecord, undefined) when is_tuple(NewRecord) ->
     insert_record(DB, ModName, NewRecord);
-compare_record(DB, ModName, NewRecord, _OldRecord) ->
-    update_record(DB, ModName, NewRecord).
+compare_record(DB, ModName, undefined, OldRecord) when is_tuple(OldRecord) ->
+    delete_record(DB, ModName, OldRecord);
+compare_record(DB, ModName, NewRecord, OldRecord) when is_tuple(NewRecord), is_tuple(OldRecord), NewRecord =/= OldRecord ->
+    update_record(DB, ModName, NewRecord);
+compare_record(_DB, _ModName, _, _) ->
+    nothing.
 
-compare_record_list(DB, ModName, NewRecordList, OldRecordList) ->
+compare_record_list(DB, ModName, NewRecordList, OldRecordList) when is_list(NewRecordList), is_list(OldRecordList) ->
     {InsertList, UpdateList, DeleteRecordList} = compare_record_list_1(ModName, NewRecordList, OldRecordList, [], []),
     insert_record_list(DB, ModName, InsertList),
     update_record_list(DB, ModName, UpdateList),
@@ -226,12 +228,16 @@ delete_map(DB, ModName, Map) ->
     Conditions = key_conditions(KeyFieldList, KeyValues),
     {ok, _} = db_mysql:delete_rows(DB, TableName, Conditions).
 
+insert_maps(_DB, _ModName, []) ->
+    ok;
 insert_maps(DB, ModName, MapList) ->
     TableName = ModName:get_table_name(),
     FieldList = ModName:get_table_field_list(),
     ValuesList = [ModName:get_table_values(Map) || Map <- MapList],
     {ok, _} = db_mysql:insert_rows(DB, TableName, FieldList, ValuesList).
 
+update_maps(_DB, _ModName, []) ->
+    ok;
 update_maps(DB, ModName, MapList) ->
     TableName = ModName:get_table_name(),
     UpdateFields = ModName:get_table_field_list(),
@@ -239,6 +245,8 @@ update_maps(DB, ModName, MapList) ->
     {KeyValuesList, UpdateValuesList} = get_key_values_and_values_list(ModName, MapList),
     {ok, _} = db_mysql:update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFieldList, KeyValuesList).
 
+delete_maps(_DB, _ModName, []) ->
+    ok;
 delete_maps(DB, ModName, MapList) ->
     TableName = ModName:get_table_name(),
     KeyFieldList = ModName:get_table_key_field_list(),
@@ -267,12 +275,16 @@ delete_record(DB, ModName, Record) ->
     Conditions = key_conditions(KeyFieldList, KeyValues),
     {ok, _} = db_mysql:delete_rows(DB, TableName, Conditions).
 
+insert_record_list(_DB, _ModName, []) ->
+    ok;
 insert_record_list(DB, ModName, RecordList) ->
     TableName = ModName:get_table_name(),
     FieldList = ModName:get_table_field_list(),
     ValuesList = [ModName:get_table_values(Record) || Record <- RecordList],
     {ok, _} = db_mysql:insert_rows(DB, TableName, FieldList, ValuesList).
 
+update_record_list(_DB, _ModName, []) ->
+    ok;
 update_record_list(DB, ModName, RecordList) ->
     TableName = ModName:get_table_name(),
     UpdateFields = ModName:get_table_field_list(),
@@ -280,10 +292,12 @@ update_record_list(DB, ModName, RecordList) ->
     {KeyValuesList, UpdateValuesList} = get_key_values_and_values_list(ModName, RecordList),
     {ok, _} = db_mysql:update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFieldList, KeyValuesList).
 
+delete_record_list(_DB, _ModName, []) ->
+    ok;
 delete_record_list(DB, ModName, RecordList) ->
     TableName = ModName:get_table_name(),
     KeyFieldList = ModName:get_table_key_field_list(),
-    KeyValuesList = [ModName:get_table_values(Record) || Record <- RecordList],
+    KeyValuesList = [ModName:get_table_key_values(Record) || Record <- RecordList],
     {ok, _} = db_mysql:delete_rows(DB, TableName, KeyFieldList, KeyValuesList).
 
 get_key_values_and_values_list(ModName, [Struct | T]) ->
