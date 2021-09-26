@@ -36,7 +36,8 @@
     init/1,
     handle_call/3,
     handle_cast/2,
-    handle_info/2
+    handle_info/2,
+    terminate/2
 ]).
 
 
@@ -153,7 +154,7 @@ init_insert(Tab, Object) when is_tuple(Object) ->
 init_insert_1(Tab, Objects) ->
     ets:insert(Tab, Objects),
     KeyMap = maps:from_list([{get_keys(Tab, Object), ?DIRTY_NOTHING} || Object <- Objects]),
-    gen_server:cast(db_sup:get_pid(Tab), {init_insert, Tab, KeyMap}),
+    gen_server:cast(get_pid(Tab), {init_insert, Tab, KeyMap}),
     true.
 
 %%------------------------------------------------------------------------------
@@ -163,7 +164,7 @@ init_insert_1(Tab, Objects) ->
 %%------------------------------------------------------------------------------
 -spec flush(Tab :: ets:tab()) -> ok|error.
 flush(Tab) ->
-    gen_server:call(db_sup:get_pid(Tab), {flush, Tab}).
+    gen_server:call(get_pid(Tab), {flush, Tab}).
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -172,7 +173,7 @@ flush(Tab) ->
 %%------------------------------------------------------------------------------
 -spec pull(Tab :: ets:tab()) -> {InsertKeyList :: list(), UpdateKeyList :: list(), DeleteKeyList :: list()}|error.
 pull(Tab) ->
-    gen_server:call(db_sup:get_pid(Tab), {pull, Tab}).
+    gen_server:call(get_pid(Tab), {pull, Tab}).
 
 %%--------------------------------------------------------------------
 %% ETS API
@@ -180,38 +181,38 @@ pull(Tab) ->
 -spec delete(ets:tab()) -> true.
 delete(Tab) ->
     true = ets:delete(Tab),
-    gen_server:cast(db_sup:get_pid(Tab), {delete, Tab}),
+    gen_server:cast(get_pid(Tab), {delete, Tab}),
     true.
 
 -spec delete(ets:tab(), term()) -> true.
 delete(Tab, Key) ->
     true = ets:delete(Tab, Key),
-    gen_server:cast(db_sup:get_pid(Tab), {delete, Tab, [Key]}),
+    gen_server:cast(get_pid(Tab), {delete, Tab, [Key]}),
     true.
 
 -spec delete_all_objects(ets:tab()) -> true.
 delete_all_objects(Tab) ->
     true = ets:delete_all_objects(Tab),
-    gen_server:cast(db_sup:get_pid(Tab), {delete_all, Tab}),
+    gen_server:cast(get_pid(Tab), {delete_all, Tab}),
     true.
 
 -spec delete_object(ets:tab(), tuple()) -> true.
 delete_object(Tab, Object) ->
     true = ets:delete_object(Tab, Object),
-    gen_server:cast(db_sup:get_pid(Tab), {delete, Tab, [get_keys(Tab, Object)]}),
+    gen_server:cast(get_pid(Tab), {delete, Tab, [get_keys(Tab, Object)]}),
     true.
 
 -spec select_delete(ets:tab(), ets:match_spec()) -> non_neg_integer().
 select_delete(Tab, [{'_', [], [true]}] = MatchSpec) ->
     NumDeleted = ets:select_delete(Tab, MatchSpec),
-    gen_server:cast(db_sup:get_pid(Tab), {delete_all, Tab}),
+    gen_server:cast(get_pid(Tab), {delete_all, Tab}),
     NumDeleted;
 select_delete(Tab, [{Pattern, Condition, _}] = MatchSpec) ->
     KeyPos = ets:info(Tab, keypos),
     MS = [{Pattern, Condition, [{element, KeyPos, '$_'}]}],
     Keys = ets:select(Tab, MS),
     NumDeleted = ets:select_delete(Tab, MatchSpec),
-    gen_server:cast(db_sup:get_pid(Tab), {delete, Tab, Keys}),
+    gen_server:cast(get_pid(Tab), {delete, Tab, Keys}),
     NumDeleted.
 
 -spec match_delete(ets:tab(), ets:match_pattern()) -> non_neg_integer().
@@ -221,7 +222,7 @@ match_delete(Tab, Pattern) ->
 -spec take(ets:tab(), term()) -> [tuple()].
 take(Tab, Key) ->
     Objects = ets:take(Tab, Key),
-    gen_server:cast(db_sup:get_pid(Tab), {delete, Tab, [get_keys(Tab, Object) || Object <- Objects]}),
+    gen_server:cast(get_pid(Tab), {delete, Tab, [get_keys(Tab, Object) || Object <- Objects]}),
     Objects.
 
 -spec insert(ets:tab(), tuple() | [tuple()]) -> true.
@@ -234,7 +235,7 @@ insert(Tab, Object) when is_tuple(Object) ->
 
 insert_1(Tab, Objects) ->
     ets:insert(Tab, Objects),
-    gen_server:cast(db_sup:get_pid(Tab), {insert, Tab, [get_keys(Tab, Object) || Object <- Objects]}),
+    gen_server:cast(get_pid(Tab), {insert, Tab, [get_keys(Tab, Object) || Object <- Objects]}),
     true.
 
 -spec insert_new(ets:tab(), tuple() | [tuple()]) -> true.
@@ -248,7 +249,7 @@ insert_new(Tab, Object) when is_tuple(Object) ->
 insert_new_1(Tab, Objects) ->
     case ets:insert_new(Tab, Objects) of
         true ->
-            gen_server:cast(db_sup:get_pid(Tab), {insert, Tab, [get_keys(Tab, Object) || Object <- Objects]}),
+            gen_server:cast(get_pid(Tab), {insert, Tab, [get_keys(Tab, Object) || Object <- Objects]}),
             true;
         false ->
             false
@@ -260,7 +261,7 @@ select_replace(Tab, [{Pattern, Condition, _}] = MatchSpec) ->
     MS = [{Pattern, Condition, [{element, KeyPos, '$_'}]}],
     Keys = ets:select(Tab, MS),
     NumReplaced = ets:select_replace(Tab, MatchSpec),
-    gen_server:cast(db_sup:get_pid(Tab), {insert, Tab, Keys}),
+    gen_server:cast(get_pid(Tab), {insert, Tab, Keys}),
     NumReplaced.
 
 -spec update_counter(ets:tab(), term(), UpdateOp | [UpdateOp]) -> Result | [Result] when
@@ -272,7 +273,7 @@ select_replace(Tab, [{Pattern, Condition, _}] = MatchSpec) ->
     Result :: integer().
 update_counter(Tab, Key, UpdateOp) ->
     Result = ets:update_counter(Tab, Key, UpdateOp),
-    gen_server:cast(db_sup:get_pid(Tab), {update, Tab, [Key]}),
+    gen_server:cast(get_pid(Tab), {update, Tab, [Key]}),
     Result.
 
 -spec update_counter(ets:tab(), term(), UpdateOp | [UpdateOp], tuple()) -> Result | [Result] when
@@ -284,7 +285,7 @@ update_counter(Tab, Key, UpdateOp) ->
     Result :: integer().
 update_counter(Tab, Key, UpdateOp, Default) ->
     Result = ets:update_counter(Tab, Key, UpdateOp, Default),
-    gen_server:cast(db_sup:get_pid(Tab), {update, Tab, [Key]}),
+    gen_server:cast(get_pid(Tab), {update, Tab, [Key]}),
     Result.
 
 -spec update_element(atom(), term(), {Pos, Value} | [{Pos, Value}]) -> boolean() when
@@ -293,11 +294,14 @@ update_counter(Tab, Key, UpdateOp, Default) ->
 update_element(Tab, Key, ElementSpec) ->
     case ets:update_element(Tab, Key, ElementSpec) of
         true ->
-            gen_server:cast(db_sup:get_pid(Tab), {update, Tab, [Key]}),
+            gen_server:cast(get_pid(Tab), {update, Tab, [Key]}),
             true;
         false ->
             false
     end.
+
+get_pid(Tab) ->
+    ets:lookup_element(?MODULE, Tab, 2).
 
 get_keys(Tab, Object) ->
     Keypos = ets:info(Tab, keypos),
@@ -308,6 +312,7 @@ get_keys(Tab, Object) ->
 init([Tab, ModName, Options]) ->
     process_flag(trap_exit, true),
     State = do_reg(Tab, ModName, Options),
+    ets:insert(?MODULE, {Tab, self()}),
     {ok, State}.
 
 handle_call(Request, From, State) ->
@@ -336,6 +341,16 @@ handle_info(Request, State) ->
             ?LOG_ERROR("Err:~w, Reason:~w~nStacktrace:~tp", [Err, Reason, Stacktrace]),
             {noreply, State}
     end.
+
+terminate(_Reason, #{tab := Tab} = State) ->
+    ets:delete(?MODULE, Tab),
+    case State of
+        #{key_maps := KeyMaps} when KeyMaps =/= #{} ->
+            ?LOG_WARNING("Dirty Data Not Empty!~n~w", [State]);
+        #{} ->
+            ok
+    end,
+    ok.
 
 do_call(flush, _From, State) ->
     case do_flush(State) of
