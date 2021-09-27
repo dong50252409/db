@@ -42,7 +42,7 @@
 
 
 -define(CHECK_OPTIONS_LIST, [flush_interval, schema]).
--define(CHECK_TAB_LIST, [type, protection, keypos]).
+-define(CHECK_TAB_LIST, [owner, type, protection, keypos]).
 
 -define(DIRTY_NOTHING, 0).      % 无状态
 -define(DIRTY_INSERT, 1).       % 插入状态
@@ -69,7 +69,7 @@ reg(Tab, ModName, Options) ->
             case check_tab(Tab, ?CHECK_TAB_LIST) of
                 true ->
                     {ok, Pid} = db_sup:start_child(Tab, ModName, Options),
-                    try_heir_ets(Tab, Pid, Options),
+                    ets:setopts(Tab, {heir, Pid, nothing}),
                     ok;
                 Error ->
                     Error
@@ -109,6 +109,13 @@ check_options(Options, [schema | T]) ->
 check_options(_Options, []) ->
     true.
 
+check_tab(Tab, [owner | T]) ->
+    case self() =/= ets:info(Tab, owner) of
+        true ->
+            {error, ets_owner};
+        false ->
+            check_tab(Tab, T)
+    end;
 check_tab(Tab, [type | T]) ->
     case ets:info(Tab, type) of
         Type when Type =:= bag;Type =:= duplicate_bag ->
@@ -132,14 +139,6 @@ check_tab(Tab, [keypos | T]) ->
     end;
 check_tab(_Tab, []) ->
     true.
-
-try_heir_ets(Tab, Pid, Options) ->
-    case proplists:get_value(schema, Options) of
-        {auto, _} ->
-            ets:setopts(Tab, {heir, Pid, nothing});
-        _ ->
-            ok
-    end.
 %%------------------------------------------------------------------------------
 %% @doc
 %% 初始化插入数据，数据将被标记为nothing状态
@@ -409,8 +408,7 @@ do_info(callback, State) ->
     {noreply, State1};
 
 do_info({'ETS-TRANSFER', _TId, _FromPid, _HeirData}, State) ->
-    State1 = do_ets_transfer(State),
-    {noreply, State1};
+    do_ets_transfer(State);
 
 do_info(_Request, State) ->
     {noreply, State}.
@@ -675,14 +673,21 @@ do_collect_dirty_list(none, KeyMaps, InsertList, UpdateList, DeleteList) ->
     {KeyMaps, InsertList, UpdateList, DeleteList}.
 
 do_ets_transfer(State) ->
-    case do_flush(State) of
-        {retry, State1} ->
-            %% 数据库连接出现问题了，可能是暂时的，启动一个5秒的定时器，期待下次能够成功保存数据并删掉ETS表
-            State2 = do_start_timer(State1#{interval := 5000}),
-            {noreply, State2};
-        {_Ret, #{tab := Tab} = State1} ->
-            %% 如果`_Ret`为`ok`可以正常删除ETS表并结束进程
-            %% 如果`_Ret`为`error`说明某些原因导致ETS表已经不存在了，这里直接删掉ETS表并取消定时器即可
+    case State of
+        #{tab := Tab, db := undefined} ->
+            State1 = do_callback(State),
             catch ets:delete(Tab),
-            {stop, normal, State1}
+            {stop, normal, State1};
+        #{tab := Tab, callback := undefined} ->
+            case do_flush(State) of
+                {retry, State1} ->
+                    %% 数据库连接出现问题了，可能是暂时的，启动一个5秒的定时器，期待下次能够成功保存数据并删掉ETS表
+                    State2 = do_start_timer(State1#{interval := 5000}),
+                    {noreply, State2};
+                {_Ret, State1} ->
+                    %% 如果`_Ret`为`ok`可以正常删除ETS表并结束进程
+                    %% 如果`_Ret`为`error`说明某些原因导致ETS表已经不存在了，这里直接删掉ETS表并取消定时器即可
+                    catch ets:delete(Tab),
+                    {stop, normal, State1}
+            end
     end.
