@@ -79,7 +79,7 @@ reg(Tab, ModName, Options) ->
     end.
 
 check_options(Options, [flush_interval | T]) ->
-    case proplists:get_value(timeout, Options) of
+    case proplists:get_value(flush_interval, Options) of
         Timeout when is_integer(Timeout), Timeout > 0 ->
             check_options(Options, T);
         _ ->
