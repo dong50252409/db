@@ -11,7 +11,7 @@
 -include_lib("kernel/include/logger.hrl").
 
 %% API
--export([start_link/3]).
+-export([start_link/1]).
 
 %% gen_server callbacks
 -export([
@@ -30,15 +30,15 @@
 %%-------------------------------------------------------------------
 %% API functions
 %%--------------------------------------------------------------------
-start_link(Tab, ModName, Options) ->
-    gen_server:start_link(?MODULE, [Tab, ModName, Options], []).
+start_link(Args) ->
+    gen_server:start_link(?MODULE, Args, []).
 
 %%--------------------------------------------------------------------
 %% gen_server callbacks
 %%--------------------------------------------------------------------
-init([Tab, ModName, Options]) ->
+init(Args) ->
     process_flag(trap_exit, true),
-    State = do_init(Tab, ModName, Options),
+    State = do_init(Args),
     {ok, State}.
 
 handle_call(Request, From, State) ->
@@ -91,8 +91,8 @@ do_call(pull, _From, State) ->
 do_call(_Request, _From, State) ->
     {reply, ok, State}.
 
-do_cast({init_insert, Keys}, State) ->
-    State1 = do_init_insert(Keys, State),
+do_cast({init_insert, KeyMaps}, State) ->
+    State1 = do_init_insert(KeyMaps, State),
     {noreply, State1};
 
 do_cast(delete, State) ->
@@ -141,7 +141,7 @@ do_info(_Request, State) ->
 %% Internal functions
 %%--------------------------------------------------------------------
 
-do_start_timer(#{mode := db_mode, interval := Interval, timer_ref := TimerRef} = State) ->
+do_start_timer(#{mode := auto_mode, interval := Interval, timer_ref := TimerRef} = State) ->
     do_cancel_timer(TimerRef),
     State#{timer_ref := erlang:send_after(Interval, self(), flush)};
 do_start_timer(#{mode := callback_mode, interval := Interval, timer_ref := TimerRef} = State) ->
@@ -201,12 +201,13 @@ update_compare([Key | T], KeyMaps) ->
 update_compare([], KeyMaps) ->
     KeyMaps.
 
-do_init(Tab, ModName, Options) ->
-    {Mode, DBPool, Callback} = get_mode(Options),
+do_init({Tab, DBPool, ModName, Options}) ->
+    {Mode, Callback} = get_mode(Options),
     State = #{
-        tab => Tab, mod_name => ModName,
-        mode => Mode, db_pool => DBPool, callback => Callback,
-        interval => proplists:get_value(flush_interval, Options),
+        tab => Tab, ets_ref => get_ets_ref(Tab),
+        db_pool => DBPool, mod_name => ModName,
+        mode => Mode, callback => Callback,
+        interval => proplists:get_value(flush_interval, Options, 5000),
         timer_ref => undefined, key_maps => #{}
     },
     State1 = do_start_timer(State),
@@ -214,16 +215,21 @@ do_init(Tab, ModName, Options) ->
 
 get_mode(Options) ->
     case proplists:get_value(mode, Options) of
-        {auto, DBPool} ->
-            {db_mode, DBPool, undefined};
+        auto ->
+            {auto_mode, undefined};
         {callback, Pid} when is_pid(Pid) ->
-            {callback_mode, undefined, Pid};
+            {callback_mode, Pid};
         {callback, Mod} when is_atom(Mod) ->
-            {callback_mode, undefined, erlang:whereis(Mod)}
+            {callback_mode, erlang:whereis(Mod)}
     end.
 
-do_init_insert(Keys, State) ->
-    State#{key_maps := [{Key, ?DIRTY_NOTHING} || Key <- Keys]}.
+get_ets_ref(Tab) when is_reference(Tab) ->
+    Tab;
+get_ets_ref(Tab) when is_atom(Tab) ->
+    ets:whereis(Tab).
+
+do_init_insert(KeyMaps, State) ->
+    State#{key_maps := KeyMaps}.
 
 do_delete(#{db_pool := DBPool, mod_name := ModName, timer_ref := TRef} = State) ->
     TableName = ModName:get_table_name(),
@@ -261,8 +267,8 @@ do_flush(State) ->
             end
     end.
 
-insert_record_list(#{tab := Tab, db_pool := DBPool, mod_name := ModName, key_maps := KeyMaps} = State) ->
-    case do_collect_insert_list(Tab, ModName, KeyMaps) of
+insert_record_list(#{ets_ref := ETSRef, db_pool := DBPool, mod_name := ModName, key_maps := KeyMaps} = State) ->
+    case do_collect_insert_list(ETSRef, ModName, KeyMaps) of
         {_KeyMaps1, []} ->
             {ok, State};
         {KeyMaps1, ValuesList} ->
@@ -299,8 +305,8 @@ do_collect_insert_list(Tab, {_Key, _Value, NextIter}, ModName, KeyMaps, ValuesLi
 do_collect_insert_list(_Tab, none, _ModName, KeyMaps, ValuesList) ->
     {KeyMaps, ValuesList}.
 
-update_record_list(#{tab := Tab, db_pool := DBPool, mod_name := ModName, key_maps := KeyMaps} = State) ->
-    case do_collect_update_list(Tab, ModName, KeyMaps) of
+update_record_list(#{ets_ref := ETSRef, db_pool := DBPool, mod_name := ModName, key_maps := KeyMaps} = State) ->
+    case do_collect_update_list(ETSRef, ModName, KeyMaps) of
         {_KeyMaps1, [], []} ->
             {ok, State};
         {KeyMaps1, KeyValuesList, ValuesList} ->
@@ -414,10 +420,16 @@ do_collect_dirty_list(none, KeyMaps, InsertList, UpdateList, DeleteList) ->
 
 do_terminate(State) ->
     case State of
-        #{tab := Tab, mode := db_mode} ->
-            {_Ret, State1} = do_flush(State);
-        #{tab := Tab, mode := callback_mode} ->
+        #{mode := auto_mode} ->
+            case do_flush(State) of
+                {retry, State1} ->
+                    %% retry 说明数据库连接暂时出现了问题，2后重试，最多两次后会被强制结束
+                    timer:sleep(2000),
+                    do_terminate(State1);
+                {_, State1} ->
+                    State1
+            end;
+        #{mode := callback_mode} ->
             State1 = do_callback(State)
     end,
-    catch ets:delete(Tab),
     State1.
