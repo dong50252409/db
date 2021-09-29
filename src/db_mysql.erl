@@ -25,9 +25,9 @@
     transaction/2, transaction/3, transaction/4
 ]).
 
--export_type([db_name/0, mysql_conn/0, table_name/0, field/0, value/0, sql/0, operator/0, condition/0, affected_rows/0, query_error/0]).
+-export_type([db_pool/0, mysql_conn/0, table_name/0, field/0, value/0, sql/0, operator/0, condition/0, affected_rows/0, query_error/0]).
 
--type db_name() :: poolboy:pool().
+-type db_pool() :: poolboy:pool().
 -type mysql_conn() :: mysql:connection().
 -type table_name() :: atom().
 -type field() :: atom().
@@ -49,19 +49,19 @@
 %% API functions
 %%--------------------------------------------------------------------
 %% @doc 插入一行数据
--spec insert_row(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Values :: [value()]) ->
+-spec insert_row(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()], Values :: [value()]) ->
     Result :: {ok, affected_rows()}|mysql:query_result().
-insert_row(DB, TableName, Fields, Values) when is_atom(TableName), is_list(Fields), is_list(Values) ->
+insert_row(DBPool, TableName, Fields, Values) when is_atom(TableName), is_list(Fields), is_list(Values) ->
     SQL = io_lib:format("INSERT INTO `~ts` (~ts) VALUES (~ts);", [TableName, join_fields(Fields), join_values(Values)]),
-    query(DB, SQL, Values).
+    query(DBPool, SQL, Values).
 
 %% @doc 插入多行数据
--spec insert_rows(DB :: db_name(), TableName :: table_name(), Fields :: [field()], ValuesList :: [[value()]]) ->
+-spec insert_rows(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()], ValuesList :: [[value()]]) ->
     Result :: {ok, affected_rows()}|query_error().
-insert_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list(Fields), is_list(ValuesList) ->
+insert_rows(DBPool, TableName, Fields, ValuesList) when is_atom(TableName), is_list(Fields), is_list(ValuesList) ->
     SQL = io_lib:format("INSERT INTO `~ts` (~ts) VALUES (~ts);", [TableName, join_fields(Fields), join_values(hd(ValuesList))]),
     ?SQL([SQL, ValuesList]),
-    case transaction(DB, fun insert_transaction/3, [SQL, ValuesList]) of
+    case transaction(DBPool, fun insert_transaction/3, [SQL, ValuesList]) of
         {atomic, Result} ->
             Result;
         {aborted, Err} ->
@@ -69,12 +69,12 @@ insert_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list(
     end.
 
 %% @doc 替换多行数据
--spec replace_rows(DB :: db_name(), TableName :: table_name(), Fields :: [field()], ValuesList :: [[value()]]) ->
+-spec replace_rows(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()], ValuesList :: [[value()]]) ->
     Result :: {ok, affected_rows()}|query_error().
-replace_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list(Fields), is_list(ValuesList) ->
+replace_rows(DBPool, TableName, Fields, ValuesList) when is_atom(TableName), is_list(Fields), is_list(ValuesList) ->
     SQL = io_lib:format("REPLACE INTO `~ts` (~ts) VALUES (~ts);", [TableName, join_fields(Fields), join_values(hd(ValuesList))]),
     ?SQL([SQL, ValuesList]),
-    case transaction(DB, fun insert_transaction/3, [SQL, ValuesList]) of
+    case transaction(DBPool, fun insert_transaction/3, [SQL, ValuesList]) of
         {atomic, Result} ->
             Result;
         {aborted, Err} ->
@@ -82,28 +82,28 @@ replace_rows(DB, TableName, Fields, ValuesList) when is_atom(TableName), is_list
     end.
 
 %% @doc 截断表
--spec truncate_table(DB :: db_name(), TableName :: table_name()) -> ok.
-truncate_table(DB, TableName) when is_atom(TableName) ->
+-spec truncate_table(DBPool :: db_pool(), TableName :: table_name()) -> ok.
+truncate_table(DBPool, TableName) when is_atom(TableName) ->
     SQL = io_lib:format("TRUNCATE `~ts`;", [TableName]),
-    query(DB, SQL),
+    query(DBPool, SQL),
     ok.
 
 %% @doc 根据条件，删除表数据
--spec delete_rows(DB :: db_name(), TableName :: table_name(), Conditions :: [condition()]) ->
+-spec delete_rows(DBPool :: db_pool(), TableName :: table_name(), Conditions :: [condition()]) ->
     Result :: {ok, affected_rows()}|mysql:query_result().
-delete_rows(DB, TableName, Conditions) when is_atom(TableName), is_list(Conditions) ->
+delete_rows(DBPool, TableName, Conditions) when is_atom(TableName), is_list(Conditions) ->
     {ConvertCondition, ConvertValues} = condition_convert(Conditions),
     SQL = io_lib:format("DELETE FROM `~ts` WHERE ~ts;", [TableName, ConvertCondition]),
-    query(DB, SQL, ConvertValues).
+    query(DBPool, SQL, ConvertValues).
 
 %% @doc 根据主键列表和值列表，删除表数据
--spec delete_rows(DB :: db_name(), TableName :: table_name(), KeyFields :: [field()], KeyValuesList :: [[value()]]) ->
+-spec delete_rows(DBPool :: db_pool(), TableName :: table_name(), KeyFields :: [field()], KeyValuesList :: [[value()]]) ->
     Result :: {ok, affected_rows()}|mysql:query_result().
-delete_rows(DB, TableName, KeyFields, KeyValuesList) when is_atom(TableName), is_list(KeyFields), is_list(KeyValuesList) ->
+delete_rows(DBPool, TableName, KeyFields, KeyValuesList) when is_atom(TableName), is_list(KeyFields), is_list(KeyValuesList) ->
     Conditions = lists:join(" AND ", [[atom_to_list(KeyField), "=?"] || KeyField <- KeyFields]),
     SQL = io_lib:format("DELETE FROM `~ts` WHERE ~ts;", [TableName, Conditions]),
     ?SQL([SQL, KeyValuesList]),
-    case transaction(DB, fun delete_rows_transaction/3, [SQL, KeyValuesList]) of
+    case transaction(DBPool, fun delete_rows_transaction/3, [SQL, KeyValuesList]) of
         {atomic, Result} ->
             Result;
         {aborted, Err} ->
@@ -111,29 +111,29 @@ delete_rows(DB, TableName, KeyFields, KeyValuesList) when is_atom(TableName), is
     end.
 
 %% @doc 更新表所有数据
--spec update_all(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Values :: [value()]) ->
+-spec update_all(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()], Values :: [value()]) ->
     Result :: ok|{ok, affected_rows()}|mysql:query_result().
-update_all(DB, TableName, Fields, Values) when is_atom(TableName), is_list(Fields), is_list(Values) ->
+update_all(DBPool, TableName, Fields, Values) when is_atom(TableName), is_list(Fields), is_list(Values) ->
     SQL = io_lib:format("UPDATE `~ts` SET ~ts;", [TableName, join_update_fields(Fields)]),
-    query(DB, SQL, Values).
+    query(DBPool, SQL, Values).
 
 %% @doc 根据条件，更新表数据
--spec update_rows(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Values :: [value()],
+-spec update_rows(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()], Values :: [value()],
     Conditions :: [condition()]) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
-update_rows(DB, TableName, Fields, Values, Conditions)
+update_rows(DBPool, TableName, Fields, Values, Conditions)
     when is_atom(TableName), is_list(Fields), is_list(Values), is_list(Conditions) ->
     {ConvertCondition, ConvertValues} = condition_convert(Conditions),
     SQL = io_lib:format("UPDATE `~ts` SET ~ts WHERE ~ts;", [TableName, join_update_fields(Fields), ConvertCondition]),
-    query(DB, SQL, Values ++ ConvertValues).
+    query(DBPool, SQL, Values ++ ConvertValues).
 
 %% @doc 更新多行表数据，每个更新的字段数必须一致
--spec update_rows(DB :: db_name(), TableName :: table_name(), UpdateFields :: [field()], UpdateValuesList :: [[value()]],
+-spec update_rows(DBPool :: db_pool(), TableName :: table_name(), UpdateFields :: [field()], UpdateValuesList :: [[value()]],
     KeyFields :: [field()], KeyValuesList :: [[value()]]) -> Result :: {ok, affected_rows()}|mysql:query_result().
-update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFields, KeyValuesList)
+update_rows(DBPool, TableName, UpdateFields, UpdateValuesList, KeyFields, KeyValuesList)
     when is_atom(TableName), is_list(UpdateFields), is_list(UpdateValuesList), is_list(KeyFields), is_list(KeyValuesList) ->
     Conditions = [[atom_to_list(KeyField), "=?"] || KeyField <- KeyFields],
     SQL = io_lib:format("UPDATE `~ts` SET ~ts WHERE ~ts;", [TableName, join_update_fields(UpdateFields), lists:join(" AND ", Conditions)]),
-    case transaction(DB, fun update_rows_transaction/4, [SQL, UpdateValuesList, KeyValuesList]) of
+    case transaction(DBPool, fun update_rows_transaction/4, [SQL, UpdateValuesList, KeyValuesList]) of
         {atomic, Result} ->
             Result;
         {aborted, Err} ->
@@ -141,20 +141,20 @@ update_rows(DB, TableName, UpdateFields, UpdateValuesList, KeyFields, KeyValuesL
     end.
 
 %% @doc 查询表数据，Fields为空则查询所有字段
--spec select(DB :: db_name(), TableName :: table_name(), Fields :: [field()]) -> Result :: mysql:query_result().
-select(DB, TableName, Fields) when is_atom(TableName), is_list(Fields) ->
+-spec select(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()]) -> Result :: mysql:query_result().
+select(DBPool, TableName, Fields) when is_atom(TableName), is_list(Fields) ->
     case Fields of
         [] ->
             SQL = io_lib:format("SELECT * FROM `~ts`;", [TableName]);
         _ ->
             SQL = io_lib:format("SELECT ~ts FROM `~ts`;", [join_fields(Fields), TableName])
     end,
-    query(DB, SQL).
+    query(DBPool, SQL).
 
 %% @doc 根据指定条件，查询表数据，Fields为空则查询所有字段
--spec select(DB :: db_name(), TableName :: table_name(), Fields :: [field()], Conditions :: [condition()]) ->
+-spec select(DBPool :: db_pool(), TableName :: table_name(), Fields :: [field()], Conditions :: [condition()]) ->
     Result :: mysql:query_result().
-select(DB, TableName, Fields, Conditions) when is_atom(TableName), is_list(Fields), is_list(Conditions) ->
+select(DBPool, TableName, Fields, Conditions) when is_atom(TableName), is_list(Fields), is_list(Conditions) ->
     {ConvertCondition, ConvertValues} = condition_convert(Conditions),
     case Fields of
         [] ->
@@ -162,36 +162,36 @@ select(DB, TableName, Fields, Conditions) when is_atom(TableName), is_list(Field
         _ ->
             SQL = io_lib:format("SELECT ~ts FROM `~ts` WHERE ~ts;", [join_fields(Fields), TableName, ConvertCondition])
     end,
-    query(DB, SQL, ConvertValues).
+    query(DBPool, SQL, ConvertValues).
 
 
 %%================================================
 %% 基础功能API
 %%================================================
 %% @doc 获取一个MySQL连接
--spec checkin(DB :: db_name(), Connection :: pid()) -> ok.
-checkin(DB, Connection) when is_pid(Connection) ->
-    poolboy:checkin(DB, Connection).
+-spec checkin(DBPool :: db_pool(), Connection :: pid()) -> ok.
+checkin(DBPool, Connection) when is_pid(Connection) ->
+    poolboy:checkin(DBPool, Connection).
 
 %% @doc 返回一个MySQL连接
--spec checkout(DB :: db_name()) -> pid().
-checkout(DB) ->
-    poolboy:checkout(DB).
+-spec checkout(DBPool :: db_pool()) -> pid().
+checkout(DBPool) ->
+    poolboy:checkout(DBPool).
 
 %% @doc 执行一条SQL语句
--spec query(DB :: db_name(), SQL :: sql()) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
-query(DB, SQL) ->
-    query(DB, SQL, [], default_timeout).
+-spec query(DBPool :: db_pool(), SQL :: sql()) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
+query(DBPool, SQL) ->
+    query(DBPool, SQL, [], default_timeout).
 
 %% @doc 执行一条SQL语句
--spec query(DB :: db_name(), Query :: sql(), Values :: [value()]) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
-query(DB, SQL, Values) ->
-    query(DB, SQL, Values, default_timeout).
+-spec query(DBPool :: db_pool(), Query :: sql(), Values :: [value()]) -> Result :: ok|{ok, affected_rows()}|mysql:query_result().
+query(DBPool, SQL, Values) ->
+    query(DBPool, SQL, Values, default_timeout).
 
 %% @doc 执行一条SQL语句，指定超时时长
--spec query(DB :: db_name(), SQL :: sql(), Values :: [value()], Timeout :: infinity | default_timeout | timeout()) ->
+-spec query(DBPool :: db_pool(), SQL :: sql(), Values :: [value()], Timeout :: infinity | default_timeout | timeout()) ->
     Result :: ok|{ok, affected_rows()}|mysql:query_result().
-query(DB, SQL, Values, Timeout) ->
+query(DBPool, SQL, Values, Timeout) ->
     ?SQL([SQL, Values]),
     Fun =
         fun(MySQLConn) ->
@@ -207,7 +207,7 @@ query(DB, SQL, Values, Timeout) ->
                     OtherResult
             end
         end,
-    poolboy:transaction(DB, Fun, infinity).
+    poolboy:transaction(DBPool, Fun, infinity).
 
 
 %% @doc 预编译，用于一条SQL语句多次执行
@@ -216,25 +216,25 @@ prepare(MySQLConn, SQL) ->
     mysql:prepare(MySQLConn, SQL).
 
 %% @doc 执行一个事务函数，给定的函数需要有一个参数用来传递MYSQL连接
--spec transaction(DB :: db_name(), TransactionFun :: fun((mysql_conn()) -> term())) ->
+-spec transaction(DBPool :: db_pool(), TransactionFun :: fun((mysql_conn()) -> term())) ->
     Result :: {atomic, term()} |{aborted, term()}.
-transaction(DB, TransactionFun) when is_function(TransactionFun, 1) ->
+transaction(DBPool, TransactionFun) when is_function(TransactionFun, 1) ->
     Fun = fun(MySQLConn) -> mysql:transaction(MySQLConn, TransactionFun, [MySQLConn], infinity) end,
-    poolboy:transaction(DB, Fun, infinity).
+    poolboy:transaction(DBPool, Fun, infinity).
 
 %% @doc 执行一个事务函数，给定的函数需要有一个参数用来传递MYSQL连接，带有额外参数
--spec transaction(DB :: db_name(), TransactionFun :: function(), Args :: list()) ->
+-spec transaction(DBPool :: db_pool(), TransactionFun :: function(), Args :: list()) ->
     Result :: {atomic, term()} |{aborted, term()}.
-transaction(DB, TransactionFun, Args) when is_function(TransactionFun, length(Args) + 1) ->
+transaction(DBPool, TransactionFun, Args) when is_function(TransactionFun, length(Args) + 1) ->
     Fun = fun(MySQLConn) -> mysql:transaction(MySQLConn, TransactionFun, [MySQLConn | Args], infinity) end,
-    poolboy:transaction(DB, Fun, infinity).
+    poolboy:transaction(DBPool, Fun, infinity).
 
 %% @doc 执行一个事务函数，给定的函数需要有一个参数用来传递MYSQL连接，带有额外参数，可以指定重试次数
--spec transaction(DB :: db_name(), TransactionFun :: function(), Args :: list(), Retries :: non_neg_integer() | infinity) ->
+-spec transaction(DBPool :: db_pool(), TransactionFun :: function(), Args :: list(), Retries :: non_neg_integer() | infinity) ->
     Result :: {aborted, term()}.
-transaction(DB, TransactionFun, Args, Retries) when is_function(TransactionFun, length(Args) + 1) ->
+transaction(DBPool, TransactionFun, Args, Retries) when is_function(TransactionFun, length(Args) + 1) ->
     Fun = fun(MySQLConn) -> mysql:transaction(MySQLConn, TransactionFun, [MySQLConn | Args], Retries) end,
-    poolboy:transaction(DB, Fun, infinity).
+    poolboy:transaction(DBPool, Fun, infinity).
 
 %%--------------------------------------------------------------------
 %% Internal functions

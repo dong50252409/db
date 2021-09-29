@@ -7,7 +7,7 @@
 
 -behaviour(supervisor).
 
--export([start_link/0, start_child/3]).
+-export([start_link/0]).
 
 -export([init/1]).
 
@@ -16,30 +16,13 @@
 start_link() ->
     supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
-start_child(Tab, ModName, Options) ->
-    ChildSpec = #{
-        id => Tab,
-        start => {db_agent_ets, start_link, [Tab, ModName, Options]}
-    },
-    supervisor:start_child(?MODULE, ChildSpec).
-
-%% sup_flags() = #{strategy => strategy(),         % optional
-%%                 intensity => non_neg_integer(), % optional
-%%                 period => pos_integer()}        % optional
-%% child_spec() = #{id => child_id(),       % mandatory
-%%                  start => mfargs(),      % mandatory
-%%                  restart => restart(),   % optional
-%%                  shutdown => shutdown(), % optional
-%%                  type => worker(),       % optional
-%%                  modules => modules()}   % optional
 init([]) ->
-    ets:new(db_agent_ets, [set, public, named_table, {read_concurrency, true}]),
     SupFlags = #{strategy => one_for_one, intensity => 10, period => 5},
-    ChildSpecs = get_poolboy_child_specs(),
-    {ok, {SupFlags, ChildSpecs}}.
+    PoolBoyChildSpecs = get_poolboy_child_specs(),
+    DBETSSupSpec = get_db_ets_sup_spec(),
+    {ok, {SupFlags, PoolBoyChildSpecs ++ [DBETSSupSpec]}}.
 
 %% internal functions
-
 get_poolboy_child_specs() ->
     [
         begin
@@ -48,3 +31,13 @@ get_poolboy_child_specs() ->
         end
         || {PoolName, {PoolArgs, MySQLArgs}} <- application:get_env(db, mysql_pool, [])
     ].
+
+get_db_ets_sup_spec() ->
+    #{
+        id => db_ets_sup,
+        start => {db_ets_sup, start_link, []},
+        restart => permanent,
+        shutdown => infinity,
+        type => supervisor,
+        modules => [db_ets_sup]
+    }.
