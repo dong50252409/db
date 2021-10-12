@@ -20,7 +20,7 @@
 
 %% API
 -export([
-    start_link/0, reg/3, init_insert/2, flush/1, flush/2, pull/1, pull/2
+    start_link/0, reg/4, reg_select/5, init_insert/2, flush/1, flush/2, pull/1, pull/2
 ]).
 
 %% ETS_API
@@ -40,10 +40,10 @@
 
 
 -define(ETS_DB_ETS_INFO, ets_db_ets_info).
--define(CHECK_OPTIONS_LIST, [flush_interval, mode]).
--define(CHECK_TAB_LIST, [owner, type, protection, keypos]).
+-define(CHECK_TAB_LIST, [owner, type, keypos]).
+-define(CHECK_OPTIONS_LIST, [mode, flush_interval]).
 
--type option() :: {flush_interval, timeout()}|{mode, {auto, db_mysql:db_pool()}|{callback, module()}}.
+-type option() :: {mode, auto|{callback, module()}}|{flush_interval, timeout()}.
 
 %%-------------------------------------------------------------------
 %% API functions
@@ -56,32 +56,68 @@ start_link() ->
 %% 注册ETS表，自动记录更改，并更新数据，仅支持set，ordered_set类型，不支持bag，duplicate_bag类型
 %% @end
 %%------------------------------------------------------------------------------
--spec reg(Tab :: ets:tab(), ModName :: module(), Options :: [option()]) -> ok|{error, term()}.
-reg(Tab, ModName, Options) ->
-    case check_options(Options, ?CHECK_OPTIONS_LIST) of
+-spec reg(Tab :: ets:tab(), DBPool :: db_mysql:db_pool(), ModName :: module(), Options :: [option()]) -> ok|{error, term()}.
+reg(Tab, DBPool, ModName, Options) ->
+    case check_reg_conditions(Tab, Options) of
         true ->
-            case check_tab(Tab, ?CHECK_TAB_LIST) of
-                true ->
-                    {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, ModName, Options}),
-                    ets:setopts(Tab, {heir, Pid, nothing}),
-                    ok;
-                Error ->
-                    Error
-            end;
+            {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, DBPool, ModName, Options}),
+            ets:setopts(Tab, {heir, Pid, nothing}),
+            ok;
         Error ->
             Error
     end.
 
-check_options(Options, [flush_interval | T]) ->
-    case proplists:get_value(flush_interval, Options) of
-        Timeout when is_integer(Timeout), Timeout > 0 ->
-            check_options(Options, T);
-        _ ->
-            {error, flush_interval_undefined}
+-spec reg_select(Tab :: ets:tab(), DBPool :: db_mysql:db_pool(), ModName :: module(),
+    Conditions :: [db_mysql:condition()], Options :: [option()]) -> ok|{error, term()}.
+reg_select(Tab, DBPool, ModName, Conditions, Options) ->
+    case check_reg_conditions(Tab, Options) of
+        true ->
+            {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, DBPool, ModName, Options}),
+            TableName = ModName:get_table_name(),
+            {ok, _Columns, Rows} = db_mysql:select(DBPool, TableName, Conditions),
+            RecordList = [ModName:as_record(Record) || Record <- Rows],
+            init_insert(Tab, RecordList),
+            ets:setopts(Tab, {heir, Pid, nothing}),
+            ok;
+        Error ->
+            Error
+    end.
+
+check_reg_conditions(Tab, Options) ->
+    case check_tab(Tab, ?CHECK_TAB_LIST) of
+        true ->
+            check_options(Options, ?CHECK_OPTIONS_LIST);
+        Error ->
+            Error
+    end.
+
+check_tab(Tab, [owner | T]) ->
+    case self() =/= ets:info(Tab, owner) of
+        true ->
+            {error, ets_owner};
+        false ->
+            check_tab(Tab, T)
     end;
+check_tab(Tab, [type | T]) ->
+    case ets:info(Tab, type) of
+        Type when Type =:= bag;Type =:= duplicate_bag ->
+            {error, ets_type};
+        _ ->
+            check_tab(Tab, T)
+    end;
+check_tab(Tab, [keypos | T]) ->
+    case ets:info(Tab, keypos) of
+        1 ->
+            {error, ets_keypos};
+        _ ->
+            check_tab(Tab, T)
+    end;
+check_tab(_Tab, []) ->
+    true.
+
 check_options(Options, [mode | T]) ->
     case proplists:get_value(mode, Options) of
-        {auto, DBPool} when is_atom(DBPool);is_pid(DBPool);is_tuple(DBPool) ->
+        auto ->
             check_options(Options, T);
         {callback, Mod} when is_atom(Mod) ->
             case is_process_alive(erlang:whereis(Mod)) of
@@ -100,38 +136,16 @@ check_options(Options, [mode | T]) ->
         _ ->
             {error, mode_undefined}
     end;
+check_options(Options, [flush_interval | T]) ->
+    case proplists:get_value(flush_interval, Options) of
+        undefined ->
+            check_options(Options, T);
+        Timeout when is_integer(Timeout), Timeout > 0 ->
+            check_options(Options, T);
+        _ ->
+            {error, flush_interval_undefined}
+    end;
 check_options(_Options, []) ->
-    true.
-
-check_tab(Tab, [owner | T]) ->
-    case self() =/= ets:info(Tab, owner) of
-        true ->
-            {error, ets_owner};
-        false ->
-            check_tab(Tab, T)
-    end;
-check_tab(Tab, [type | T]) ->
-    case ets:info(Tab, type) of
-        Type when Type =:= bag;Type =:= duplicate_bag ->
-            {error, ets_type};
-        _ ->
-            check_tab(Tab, T)
-    end;
-check_tab(Tab, [protection | T]) ->
-    case ets:info(Tab, protection) of
-        private ->
-            {error, ets_private};
-        _ ->
-            check_tab(Tab, T)
-    end;
-check_tab(Tab, [keypos | T]) ->
-    case ets:info(Tab, keypos) of
-        1 ->
-            {error, ets_keypos};
-        _ ->
-            check_tab(Tab, T)
-    end;
-check_tab(_Tab, []) ->
     true.
 %%------------------------------------------------------------------------------
 %% @doc
@@ -146,8 +160,8 @@ init_insert(Tab, Object) when is_tuple(Object) ->
 
 init_insert_1(Tab, Objects) ->
     ets:insert(Tab, Objects),
-    Keys = [get_keys(Tab, Object) || Object <- Objects],
-    gen_server:cast(get_pid(Tab), {init_insert, Keys}),
+    KeyMaps = maps:from_list([{get_keys(Tab, Object), 0} || Object <- Objects]),
+    gen_server:cast(get_pid(Tab), {init_insert, KeyMaps}),
     true.
 
 %%------------------------------------------------------------------------------
@@ -180,8 +194,10 @@ pull(Tab, Timeout) ->
 %%--------------------------------------------------------------------
 -spec delete(ets:tab()) -> true.
 delete(Tab) ->
+    Pid = get_pid(Tab),
+    gen_server:cast(Pid, delete),
     true = ets:delete(Tab),
-    gen_server:cast(get_pid(Tab), delete),
+    db_ets_child_sup:stop(Pid),
     true.
 
 -spec delete(ets:tab(), term()) -> true.
@@ -341,8 +357,8 @@ handle_info(Request, State) ->
             {noreply, State}
     end.
 
-do_call({reg, Tab, ModName, Options}, _From, State) ->
-    Reply = do_reg(Tab, ModName, Options),
+do_call({reg, Tab, DBPool, ModName, Options}, _From, State) ->
+    Reply = do_reg(Tab, DBPool, ModName, Options),
     {reply, Reply, State};
 
 do_call(_Request, _From, State) ->
@@ -362,8 +378,8 @@ do_info(_Request, State) ->
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
-do_reg(Tab, ModName, Options) ->
-    case db_ets_child_sup:start_child(Tab, ModName, Options) of
+do_reg(Tab, DBPool, ModName, Options) ->
+    case db_ets_child_sup:start_child(Tab, DBPool, ModName, Options) of
         {ok, Pid} ->
             Ref = erlang:monitor(process, Pid),
             ets:insert(?ETS_DB_ETS_INFO, {Tab, Pid}),
