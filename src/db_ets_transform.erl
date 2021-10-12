@@ -43,21 +43,29 @@
 parse_transform(AST, Options) ->
 %%    file:write_file("ast.config", io_lib:format("~p", [AST])),
     Mod = proplists:get_value(db_ets_callback, Options),
-    case code:load_file(Mod) of
-        {module, Mod} ->
-            case erlang:function_exported(Mod, reg_list, 0) of
-                true ->
-                    RegList = Mod:reg_list(),
-                    Verbose = verbose(AST, Options),
-                    Fun = fun(Form) -> walk_call(Form, RegList, Verbose) end,
-                    NewAST = map(Fun, AST),
-%%                    file:write_file("new_ast.config", io_lib:format("~p", [NewAST])),
-                    NewAST;
-                false ->
-                    AST
-            end;
-        _Err ->
+    case load_file(Mod) of
+        true ->
+            RegList = Mod:reg_list(),
+            Verbose = verbose(AST, Options),
+            Fun = fun(Form) -> walk_call(Form, RegList, Verbose) end,
+            NewAST = map(Fun, AST),
+%%            file:write_file("new_ast.config", io_lib:format("~p", [NewAST])),
+            NewAST;
+        false ->
             AST
+    end.
+
+load_file(Mod) ->
+    case code:is_loaded(Mod) of
+        false ->
+            case code:load_file(Mod) of
+                {module, Mod} ->
+                    erlang:function_exported(Mod, reg_list, 0);
+                _Err ->
+                    false
+            end;
+        _ ->
+            erlang:function_exported(Mod, reg_list, 0)
     end.
 
 map(Fun, AST) ->

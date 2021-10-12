@@ -169,6 +169,8 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
       {db_ets_callback, xx_callback},                             % 配置回调模块名
       db_ets_verbose                                              % 如果需要显示parse_transform替换函数详情，则定义此值
   ]}.
+  
+  {erl_first_files, ["src/xx_callback.erl"]}.                     % 确保回调模块在被db_ets_transform模块调用前被编译完成
   ```
 
 3. 使用过程中无需显式调用`db_ets:xx`相关函数，编译过程中由`db_ets_transform.erl`模块自动处理。
