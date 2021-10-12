@@ -9,6 +9,28 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
 * [poolboy](https://github.com/devinus/poolboy) 进程池，默认安装
 * [jsx](https://github.com/talentdeficit/jsx) JSON序列化反序列化，当需要将JSON转为Erlang项式时安装，默认不安装
 
+主要模块
+-----
+
+<table>
+  <tr>
+    <td><b>db_state</b></td>
+    <td>进程State持久化管理</td>
+  </tr>
+  <tr>
+    <td><b>db_ets</b></td>
+    <td>ETS表持久化管理</td>
+  </tr>
+<tr>
+    <td><b>db_ets_transform</b></td>
+    <td>处理注册ETS表的函数模块替换</td>
+  </tr>
+<tr>
+    <td><b>db_util</b></td>
+    <td>一些工具函数</td>
+  </tr>
+</table>
+
 配置及使用
 -----
 
