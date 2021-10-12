@@ -201,14 +201,16 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
   ```
 
   ```
+  -define(ETS_TABLE_2, ets_table_2).
+  
   ModName = table_2,
   {ok, _Columns, Rows}  = db_mysql:select(DBPool, TableName, []),
   Records = [ModName:as_record(Row) || Row <- Rows],
  
-  Tab = ets:new(ets_table_2, [named_table, set, {keypos, #table_2.field_1}]),
-  db_ets:init_insert(ets_table_2, Records),
+  Tab = ets:new(?ETS_TABLE_2, [named_table, set, {keypos, #table_2.field_1}]),
+  db_ets:init_insert(?ETS_TABLE_2, Records),
   
-  ets:update_element(ets_table_2, 1, {#table_2.field_2, 200}),
+  ets:update_element(?ETS_TABLE_2, 1, {#table_2.field_2, 200}),
   ok.
   ```
 
