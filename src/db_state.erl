@@ -12,7 +12,7 @@
 -define(CHECK_OPTIONS_LIST, [struct_type]).
 
 %% API
--export([reg/3, select/4, flush/2]).
+-export([reg/3, reg_select/4, flush/2]).
 
 -export_type([option/0, struct_type/0, struct/0]).
 
@@ -42,9 +42,9 @@ reg(DBPool, ModName, Options) ->
 %% 通过表模块以及条件查询数据，并返回指定结构，并注册管理此表模块
 %% @end
 %%------------------------------------------------------------------------------
--spec select(DBPool :: db_mysql:db_pool(), ModName :: module(), Conditions :: [db_mysql:condition()], Options :: [option()]) ->
+-spec reg_select(DBPool :: db_mysql:db_pool(), ModName :: module(), Conditions :: [db_mysql:condition()], Options :: [option()]) ->
     Result :: {ok, struct()}|{error, term()}|db_mysql:query_error().
-select(DBPool, ModName, Conditions, Options) ->
+reg_select(DBPool, ModName, Conditions, Options) ->
     case check_options(Options, ?CHECK_OPTIONS_LIST) of
         true ->
             TableName = ModName:get_table_name(),

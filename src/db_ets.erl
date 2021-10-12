@@ -4,12 +4,6 @@
 %%% @doc
 %%% ETS表持久化代理
 %%%
-%%% 通过parse_transform的方式将调用ets模块的字句替换为db_agent_ets模块，以下函数调用将会被替换
-%%%
-%%% delete/1, delete/2, delete_all_objects/1, delete_object/2, select_delete/2, match_delete/2, take/2,
-%%% insert/2, insert_new/2,
-%%% select_replace/2, update_counter/3, update_counter/4, update_element/3
-%%%
 %%% @end
 %%% Created : 27. 9月 2021 16:47
 %%%-------------------------------------------------------------------
@@ -20,7 +14,7 @@
 
 %% API
 -export([
-    start_link/0, reg/4, reg_select/5, init_insert/2, flush/1, flush/2, pull/1, pull/2
+    start_link/0, new/2, reg/4, reg_select/5, init_insert/2, flush/1, flush/2, pull/1, pull/2
 ]).
 
 %% ETS_API
@@ -29,6 +23,7 @@
     insert/2, insert_new/2,
     select_replace/2, update_counter/3, update_counter/4, update_element/3
 ]).
+
 
 %% gen_server callbacks
 -export([
@@ -43,6 +38,7 @@
 -define(CHECK_TAB_LIST, [owner, type, keypos]).
 -define(CHECK_OPTIONS_LIST, [mode, flush_interval]).
 
+-export_type([option/0]).
 -type option() :: {mode, auto|{callback, module()}}|{flush_interval, timeout()}.
 
 %%-------------------------------------------------------------------
@@ -56,32 +52,24 @@ start_link() ->
 %% 注册ETS表，自动记录更改，并更新数据，仅支持set，ordered_set类型，不支持bag，duplicate_bag类型
 %% @end
 %%------------------------------------------------------------------------------
--spec reg(Tab :: ets:tab(), DBPool :: db_mysql:db_pool(), ModName :: module(), Options :: [option()]) -> ok|{error, term()}.
+-spec reg(Tab :: ets:tab(), DBPool :: db_mysql:db_pool(), ModName :: module(), Options :: [option()]) -> ok.
 reg(Tab, DBPool, ModName, Options) ->
-    case check_reg_conditions(Tab, Options) of
-        true ->
-            {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, DBPool, ModName, Options}),
-            ets:setopts(Tab, {heir, Pid, nothing}),
-            ok;
-        Error ->
-            Error
-    end.
+    check_reg_conditions(Tab, Options),
+    {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, DBPool, ModName, Options}),
+    ets:setopts(Tab, {heir, Pid, nothing}),
+    ok.
 
 -spec reg_select(Tab :: ets:tab(), DBPool :: db_mysql:db_pool(), ModName :: module(),
-    Conditions :: [db_mysql:condition()], Options :: [option()]) -> ok|{error, term()}.
+    Conditions :: [db_mysql:condition()], Options :: [option()]) -> ok.
 reg_select(Tab, DBPool, ModName, Conditions, Options) ->
-    case check_reg_conditions(Tab, Options) of
-        true ->
-            {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, DBPool, ModName, Options}),
-            TableName = ModName:get_table_name(),
-            {ok, _Columns, Rows} = db_mysql:select(DBPool, TableName, Conditions),
-            RecordList = [ModName:as_record(Record) || Record <- Rows],
-            init_insert(Tab, RecordList),
-            ets:setopts(Tab, {heir, Pid, nothing}),
-            ok;
-        Error ->
-            Error
-    end.
+    check_reg_conditions(Tab, Options),
+    {ok, Pid} = gen_server:call(?MODULE, {reg, Tab, DBPool, ModName, Options}),
+    TableName = ModName:get_table_name(),
+    {ok, _Columns, Rows} = db_mysql:select(DBPool, TableName, Conditions),
+    RecordList = [ModName:as_record(Record) || Record <- Rows],
+    init_insert(Tab, RecordList),
+    ets:setopts(Tab, {heir, Pid, nothing}),
+    ok.
 
 check_reg_conditions(Tab, Options) ->
     case check_tab(Tab, ?CHECK_TAB_LIST) of
@@ -94,21 +82,21 @@ check_reg_conditions(Tab, Options) ->
 check_tab(Tab, [owner | T]) ->
     case self() =/= ets:info(Tab, owner) of
         true ->
-            {error, ets_owner};
+            throw({error, ets_owner});
         false ->
             check_tab(Tab, T)
     end;
 check_tab(Tab, [type | T]) ->
     case ets:info(Tab, type) of
         Type when Type =:= bag;Type =:= duplicate_bag ->
-            {error, ets_type};
+            throw({error, ets_type});
         _ ->
             check_tab(Tab, T)
     end;
 check_tab(Tab, [keypos | T]) ->
     case ets:info(Tab, keypos) of
         1 ->
-            {error, ets_keypos};
+            throw({error, ets_keypos});
         _ ->
             check_tab(Tab, T)
     end;
@@ -124,17 +112,17 @@ check_options(Options, [mode | T]) ->
                 true ->
                     check_options(Options, T);
                 false ->
-                    {error, mode_process_died}
+                    throw({error, mode_process_died})
             end;
         {callback, Pid} when is_pid(Pid) ->
             case is_process_alive(Pid) of
                 true ->
                     check_options(Options, T);
                 false ->
-                    {error, mode_process_died}
+                    throw({error, mode_process_died})
             end;
         _ ->
-            {error, mode_undefined}
+            throw({error, mode_undefined})
     end;
 check_options(Options, [flush_interval | T]) ->
     case proplists:get_value(flush_interval, Options) of
@@ -143,7 +131,7 @@ check_options(Options, [flush_interval | T]) ->
         Timeout when is_integer(Timeout), Timeout > 0 ->
             check_options(Options, T);
         _ ->
-            {error, flush_interval_undefined}
+            throw({error, flush_interval_undefined})
     end;
 check_options(_Options, []) ->
     true.
@@ -192,6 +180,25 @@ pull(Tab, Timeout) ->
 %%--------------------------------------------------------------------
 %% ETS API
 %%--------------------------------------------------------------------
+
+-spec new(Tab :: ets:tab(), Options :: proplists:proplist()) -> ets:tab().
+new(Tab, Options) ->
+    {ETSOptions, DBETSOptions} = get_options(Options, [db_pool, mod_name, conditions, options]),
+    Tab = ets:new(Tab, ETSOptions),
+    case DBETSOptions of
+        [DBPool, ModName, OPList] ->
+            ok = reg(Tab, DBPool, ModName, OPList);
+        [DBPool, ModName, Conditions, OPList] ->
+            ok = reg_select(Tab, DBPool, ModName, Conditions, OPList)
+    end,
+    Tab.
+
+get_options(Options, [Key | T]) ->
+    {ETSOptions, DBETSOptions} = get_options(proplists:delete(Key, Options), T),
+    {ETSOptions, [proplists:get_value(Key, Options, [])] ++ DBETSOptions};
+get_options(Options, []) ->
+    {Options, []}.
+
 -spec delete(ets:tab()) -> true.
 delete(Tab) ->
     Pid = get_pid(Tab),
