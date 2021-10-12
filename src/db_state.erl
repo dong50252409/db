@@ -67,7 +67,7 @@ reg_select(DBPool, ModName, Conditions, Options) ->
 %% 主动对比表模块数据，并更新保存到数据库
 %% @end
 %%------------------------------------------------------------------------------
--spec flush(ModName :: module(), NewStruct :: struct()) -> ok.
+-spec flush(ModName :: module(), NewStruct :: struct()) -> ok|{error,mod_unregister}.
 flush(ModName, NewStruct) ->
     case get({'$db_table_info', ModName}) of
         #{db_pool := DBPool, struct_type := StructType, cache := Struct} = TableInfo ->
