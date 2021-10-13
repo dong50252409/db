@@ -26,6 +26,10 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
     <td>处理注册ETS表的函数模块替换</td>
   </tr>
 <tr>
+    <td><b>db_mysql</b></td>
+    <td>MySQL增删改查API封装</td>
+  </tr>
+<tr>
     <td><b>db_util</b></td>
     <td>一些工具函数</td>
   </tr>
