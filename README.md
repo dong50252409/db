@@ -21,17 +21,21 @@ Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tool
     <td><b>db_ets</b></td>
     <td>ETS表持久化管理</td>
   </tr>
-<tr>
+  <tr>
     <td><b>db_ets_transform</b></td>
     <td>处理注册ETS表的函数模块替换</td>
   </tr>
-<tr>
+  <tr>
     <td><b>db_mysql</b></td>
     <td>MySQL增删改查API封装</td>
   </tr>
-<tr>
+  <tr>
     <td><b>db_util</b></td>
     <td>一些工具函数</td>
+  </tr>
+  <tr>
+    <td><b>db_model</b></td>
+    <td>Model文件回调函数定义</td>
   </tr>
 </table>
 
@@ -337,4 +341,71 @@ db_ets_transform类型
 * `-type reg_info() :: {ets:tab(), db_mysql:db_pool(), module(), [db_mysql:condition()], [db_ets:option()]}|{ets:tab(), db_mysql:db_pool(), module(), [db_ets:option()]}.`
 
   db_ets_transform回调返回参数
-    
+
+自定义Model文件
+----
+
+实现db_model.erl文件当中的回调函数即可
+
+db_model类型
+----
+
+* `-type table_name() :: atom().`
+
+  数据库表名
+
+
+* `-type table_field() :: atom().`
+
+  数据库表字段
+
+
+* `-type table_value() :: term().`
+
+  数据库表值
+
+
+* `-callback get_table_name() -> table_name().`
+
+  获取数据库表名，此函数必须实现
+
+
+* `-callback new_map() -> map().`
+
+  初始化一个新的map类型数据库表结构对象
+
+
+* `-callback as_map([table_value()]) -> map().`
+
+  将数据库表结构中的一行数据转为map结构，若仅调用`db_state:reg/3`、`db_ets:reg/4`等函数，则无需实现
+
+
+* `-callback new_record() -> tuple().`
+
+  初始化一个新的map类型数据库表结构对象
+
+
+* `-callback as_record([table_value()]) -> tuple().`
+  
+  将数据库表结构中的一行数据转为record结构，若仅调用`db_state:reg/3`、`db_ets:reg/4`等函数，且不使用`db_ets_transform`编译期替换`ets`函数模块，则无需实现
+
+
+* `-callback get_table_field_list() -> [table_field()].`
+
+  获取数据库表结构字段列表，此函数必须实现
+
+
+* `-callback get_table_key_field_list() -> [table_field()].`
+
+  获取数据库表结构主键列表，此函数必须实现
+
+
+* `-callback get_table_key_values(term()) -> [table_value(), ...].`
+
+  获取数据库表结构主键值列表，此函数必须实现
+
+
+* `-callback get_table_values(term()) -> [table_value(), ...].`
+
+  获取数据库表结构一行值 ，此函数必须实现 
+
