@@ -1,7 +1,7 @@
 db
 =====
 
-Erlang的半自动数据库持久化应用，当前仅支持MySQL，与 [db_tools](https://github.com/dong50252409/db_tools) 配套使用
+Erlang的自动数据库持久化应用，当前仅支持MySQL，与 [db_tools](https://github.com/dong50252409/db_tools) 配套使用
 
 本应用使用到了以下第三方Erlang开源库
 
