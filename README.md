@@ -1,13 +1,13 @@
 db
 =====
 
-Erlang的自动数据库持久化应用，当前仅支持MySQL，与 [db_tools](https://github.com/dong50252409/db_tools) 配套使用
+Erlang的自动数据库持久化应用，当前仅支持MySQL，与 [`db_tools`](https://github.com/dong50252409/db_tools) 配套使用
 
 本应用使用到了以下第三方Erlang开源库
 
-* [mysql-otp](https://github.com/mysql-otp/mysql-otp) MySQL驱动，默认安装
-* [poolboy](https://github.com/devinus/poolboy) 进程池，默认安装
-* [jsx](https://github.com/talentdeficit/jsx) JSON序列化反序列化，当需要将JSON转为Erlang项式时安装，默认不安装
+* [`mysql-otp`](https://github.com/mysql-otp/mysql-otp) MySQL驱动，默认安装
+* [`poolboy`](https://github.com/devinus/poolboy) 进程池，默认安装
+* [`jsx`](https://github.com/talentdeficit/jsx) JSON序列化反序列化，当需要将JSON转为Erlang项式时安装，默认不安装
 
 主要模块
 -----
